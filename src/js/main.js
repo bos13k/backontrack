@@ -22,14 +22,34 @@ let ctx = getContext();
 ctx.webkitImageSmoothingEnabled = false;
 ctx.mozImageSmoothingEnabled = false;
 ctx.imageSmoothingEnabled = false;
+let COLOR_SAFE = '#5cb85c';
+let COLOR_WARNING = '#f0ad4e';
+let COLOR_DANGER = '#d9534f';
 let HALF_WIDTH = canvas.width / 2;
 let HALF_HEIGHT = canvas.height / 2;
 let HALF_TRACK_WIDTH = 60;
+let AIRCRAFT_WIDTH = 160;
+let AIRCRAFT_HEIGHT = 160;
 let FLY_SPEED = 3;
-let ADD_INTERVAL = 300;
+var lostColor = COLOR_SAFE;
+var interval = 360;
 var aircrafts = [];
 var slctedAcft = null;
 var message = false;
+var rainbowMsg = 0;
+var showGameOver = false;
+var score = 0;
+var lost = 0;
+
+/**
+ * Override collision function 
+ */
+function collidesWith(object) {
+    let dx = this.x - object.x;
+    let dy = this.y - object.y;
+    let distance = Math.sqrt(dx * dx + dy * dy);
+    return distance < 144;
+}
 
 /**
  * Load all imgs
@@ -38,16 +58,18 @@ setImagePath('img');
 load(
     'unselected.png',
     'selected.png',
+    'rainbow.png',
     'sea.png',
     'tower.png',
-    'back.png'
+    'back.png',
+    'fire.png'
 ).then(function() {
     /**
      * Background setup
      */
     function drawSea() {
         ctx.drawImage(imageAssets['sea'], 0, 0, canvas.width * 0.3, canvas.height);
-    };
+    }
 
     function drawTower() {
         tower = imageAssets['tower'];
@@ -55,8 +77,24 @@ load(
         towerH = tower.height * 15;
         towerX = canvas.width * 0.75;
         towerY = (HALF_HEIGHT - HALF_TRACK_WIDTH - towerH) * 0.8;
-        towerH
         ctx.drawImage(tower, towerX, towerY, towerW, towerH);
+    }
+
+    function drawScoreAndLost() {
+        ctx.font = "60px arial";
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = "right";
+        ctx.fillText("Score: " + score, canvas.width - 20, 80);
+        ctx.fillStyle = lostColor;
+        ctx.textAlign = "right";
+        ctx.fillText("Lost: " + lost, canvas.width - 20, 160);
+    }
+
+    function showCenterTint(tint) {
+        ctx.font = "40px arial";
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = "center";
+        ctx.fillText(tint, canvas.width / 2, 60);
     }
 
     /**
@@ -152,42 +190,42 @@ load(
         let fix = Math.floor(Math.random() * 2);
         switch (mode) {
             case 0:
-                rotation = Math.random() * Math.PI / 2;
+                rotation = Math.random() * Math.PI / 6 + Math.PI / 6;
                 if (fix == 0) {
-                    x = -100;
+                    x = 0;
                     y = Math.floor(Math.random() * HALF_HEIGHT);
                 } else {
-                    y = -100;
+                    y = 0;
                     x = Math.floor(Math.random() * HALF_WIDTH);
                 }
                 break;
             case 1:
-                rotation = Math.random() * Math.PI / 2 + Math.PI / 2;
+                rotation = Math.random() * Math.PI / 6 + Math.PI * 2 / 3;
                 if (fix == 0) {
-                    x = canvas.width + 100;
+                    x = canvas.width;
                     y = Math.floor(Math.random() * HALF_HEIGHT);
                 } else {
-                    y = -100;
+                    y = 0;
                     x = Math.floor(Math.random() * HALF_WIDTH) + HALF_WIDTH;
                 }
                 break;
             case 2:
-                rotation = - Math.random() * Math.PI / 2;
+                rotation = - (Math.random() * Math.PI / 6 + Math.PI / 6);
                 if (fix == 0) {
-                    x = -100;
+                    x = 0;
                     y = Math.floor(Math.random() * HALF_HEIGHT) + HALF_HEIGHT;
                 } else {
-                    y = canvas.height + 100;
+                    y = canvas.height;
                     x = Math.floor(Math.random() * HALF_WIDTH);
                 }
                 break;
             case 3:
-                rotation = - (Math.random() * Math.PI / 2 + Math.PI / 2);
+                rotation = - (Math.random() * Math.PI / 6 + Math.PI * 2 / 3);
                 if (fix == 0) {
-                    x = canvas.width + 100;
+                    x = canvas.width;
                     y = Math.floor(Math.random() * HALF_HEIGHT) + HALF_HEIGHT;
                 } else {
-                    y = canvas.height + 100;
+                    y = canvas.height;
                     x = Math.floor(Math.random() * HALF_WIDTH) + HALF_WIDTH;
                 }
                 break;
@@ -200,12 +238,15 @@ load(
             x: x,
             y: y,
             anchor: {x: 0.5, y: 0.5},
-            width: 160,
-            height: 180,
+            width: AIRCRAFT_WIDTH,
+            height: AIRCRAFT_HEIGHT,
             rotation: rotation,
+            rainbow: false,
             landed: false,
             selected: false,
+            scored: false,
             image: imageAssets['unselected'],
+            collidesWith: collidesWith,
             onDown: function() {
                 if (!this.landed && !this.selected) {
                     if (slctedAcft != null) {
@@ -213,10 +254,18 @@ load(
                         aircrafts[slctedAcft].image = imageAssets['unselected'];
                     }
                     this.selected = true;
-                    this.image = imageAssets['selected'];
+                    if (this.rainbow) {
+                        this.image = imageAssets['rainbow'];
+                        rainbowMsg += 1;
+                    } else {
+                        this.image = imageAssets['selected'];
+                    }
                 }
             }
         });
+        if (Math.random() < 0.1) {
+            newAcft.rainbow = true;
+        }
         track(newAcft);
         aircrafts.push(newAcft);
     }
@@ -231,36 +280,81 @@ load(
             if (acft.rotation < - Math.PI) {
                 acft.rotation = Math.PI * 2 + acft.rotation;
             }
-            acft.dx = Math.cos(acft.rotation) * FLY_SPEED;
-            acft.dy = Math.sin(acft.rotation) * FLY_SPEED;
+            if (acft.rainbow) {
+                acft.dx = Math.cos(acft.rotation) * FLY_SPEED * 2;
+                acft.dy = Math.sin(acft.rotation) * FLY_SPEED * 2;
+            } else {
+                acft.dx = Math.cos(acft.rotation) * FLY_SPEED;
+                acft.dy = Math.sin(acft.rotation) * FLY_SPEED;
+            }
             if (acft.selected) {
                 slctedAcft = i;
                 if (keyPressed('left') || keyPressed('a')) {
-                    acft.rotation -= 0.02;
+                    if (acft.rainbow) {
+                        acft.rotation -= 0.04;
+                    } else {
+                        acft.rotation -= 0.02;
+                    }
                 }
                 if (keyPressed('right') || keyPressed('d')) {
-                    acft.rotation += 0.02;
+                    if (acft.rainbow) {
+                        acft.rotation += 0.04;
+                    } else {
+                        acft.rotation += 0.02;
+                    }
                 }
             }
             if (landArea.readyLanding(acft)) {
                 message = true;
                 acft.landed = true;
-                acft.selected = false;
-                acft.image = imageAssets['unselected'];
+                if (acft.selected) {
+                    slctedAcft = null;
+                    acft.selected = false;
+                    acft.image = imageAssets['unselected'];
+                }
             }
             if (acft.landed) {
                 startLanding(acft);
+                if (!acft.scored) {
+                    if (acft.rainbow) {
+                        score += 5;
+                    } else {
+                        score += 1;
+                    }
+                    acft.scored = true;
+                }
+            }
+            if (!(acft.x >= 0 && acft.x <= canvas.width && acft.y >= 0 && acft.y <= canvas.height)) {
+                if (acft.selected) {
+                    slctedAcft = null;
+                }
+                if (!acft.scored) {
+                    lost += 1;
+                    if (lost > 1 && lost < 4) {
+                        lostColor = COLOR_WARNING;
+                    } else if (lost >= 4) {
+                        lostColor = COLOR_DANGER;
+                    }
+                    if (lost >= 5) {
+                        loop.stop();
+                    }
+                }
+                aircrafts.splice(i, 1);
             }
         });
     }
 
     function renderAllAcfts() {
         aircrafts.forEach(function(acft, i) {
-            if (i != slctedAcft) {
-                acft.render();
-            }
+            aircrafts.forEach(function(acftelse, j) {
+                if (i != j && !acft.landed && !acftelse.landed && acftelse.collidesWith(acft)) {
+                    acft.image = imageAssets['fire'];
+                    acftelse.image = imageAssets['fire'];
+                    loop.stop();
+                }
+            });
+            acft.render();
         });
-        aircrafts[slctedAcft].render();
     };
 
     function startLanding(acft) {
@@ -290,12 +384,16 @@ load(
      * Game loop
      */
     let tCount = 0;
+    let msgCounter = 0;
     let loop = GameLoop({
         update: function() {
             tCount += 1;
-            if (tCount >= ADD_INTERVAL) {
+            if (tCount >= interval) {
                 addAcft();
                 tCount = 0;
+            }
+            if (interval > 240) {
+                interval -= 0.05;
             }
             updateAllAcfts();
             landArea.update();
@@ -315,6 +413,16 @@ load(
                 msg.render();
             }
             renderAllAcfts();
+            if (rainbowMsg == 1) {
+                if (msgCounter < 480) {
+                    showCenterTint("A Rainbow Airplane! Get it landed to score more.");
+                    msgCounter += 1;
+                } else {
+                    msgCounter = 0;
+                    rainbowMsg += 1;
+                }
+            }
+            drawScoreAndLost();
         }
     });
     loop.start();
