@@ -31,15 +31,19 @@ let HALF_TRACK_WIDTH = 60;
 let AIRCRAFT_WIDTH = 160;
 let AIRCRAFT_HEIGHT = 160;
 let FLY_SPEED = 3;
+// 0: homepage, 1: game, 2: gameover
+var state = 0;
 var lostColor = COLOR_SAFE;
 var interval = 360;
 var aircrafts = [];
 var slctedAcft = null;
 var message = false;
+// 0: not showed yet, 1: first time showing, 2: showed
 var rainbowMsg = 0;
 var showGameOver = false;
 var score = 0;
 var lost = 0;
+var fire;
 
 /**
  * Override collision function 
@@ -56,6 +60,7 @@ function collidesWith(object) {
  */
 setImagePath('img');
 load(
+    'title.png',
     'unselected.png',
     'selected.png',
     'rainbow.png',
@@ -67,12 +72,40 @@ load(
     /**
      * Background setup
      */
+    let homepageAcft = Sprite({
+        x: 0,
+        y: HALF_HEIGHT,
+        anchor: {x:1, y:0.5},
+        dx: 5,
+        width: AIRCRAFT_WIDTH,
+        height: AIRCRAFT_HEIGHT,
+        image: imageAssets['unselected']
+    });
+
+    function drawHomepage() {
+        let title = imageAssets['title'];
+        titleX = HALF_WIDTH - title.width * 10;
+        titleY = HALF_HEIGHT - title.height * 10 - AIRCRAFT_HEIGHT - 20;
+        ctx.drawImage(title, titleX, titleY, title.width * 20, title.height * 20);
+        ctx.font = "60px arial";
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = "center";
+        ctx.fillText("Click on an airplane to control.",
+            HALF_WIDTH, HALF_HEIGHT + AIRCRAFT_HEIGHT + 20);
+        ctx.fillText("Use A / D or arrow keys left / right to adjust the direction.",
+            HALF_WIDTH, HALF_HEIGHT + AIRCRAFT_HEIGHT + 120);
+        ctx.fillText("Enter the runway with a suitable angle for landing.",
+            HALF_WIDTH, HALF_HEIGHT + AIRCRAFT_HEIGHT + 220);
+        ctx.fillText("Press ENTER to start.",
+            HALF_WIDTH, HALF_HEIGHT + AIRCRAFT_HEIGHT + 320);
+    }
+
     function drawSea() {
         ctx.drawImage(imageAssets['sea'], 0, 0, canvas.width * 0.3, canvas.height);
     }
 
     function drawTower() {
-        tower = imageAssets['tower'];
+        let tower = imageAssets['tower'];
         towerW = tower.width * 15;
         towerH = tower.height * 15;
         towerX = canvas.width * 0.75;
@@ -90,11 +123,40 @@ load(
         ctx.fillText("Lost: " + lost, canvas.width - 20, 160);
     }
 
-    function showCenterTint(tint) {
+    function showCenterHint(hint, y) {
         ctx.font = "40px arial";
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = "center";
-        ctx.fillText(tint, canvas.width / 2, 60);
+        ctx.fillText(hint, canvas.width / 2, y);
+    }
+
+    function drawFire(fire) {
+        let fireImg = imageAssets['fire'];
+        ctx.drawImage(fireImg, fire[0] - AIRCRAFT_WIDTH / 2, fire[1] - AIRCRAFT_HEIGHT / 2,
+            AIRCRAFT_WIDTH, AIRCRAFT_HEIGHT);
+        ctx.drawImage(fireImg, fire[2] - AIRCRAFT_WIDTH / 2, fire[3] - AIRCRAFT_HEIGHT / 2,
+            AIRCRAFT_WIDTH, AIRCRAFT_HEIGHT);
+    }
+
+    function showGameOver() {
+        ctx.font = "80px arial";
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = "center";
+        ctx.fillText("GAME OVER!!!", canvas.width / 2, 160);
+        ctx.fillText("Press ENTER to play again.", canvas.width / 2, 320);
+    }
+
+    function reset() {
+        lostColor = COLOR_SAFE;
+        interval = 360;
+        aircrafts = [];
+        slctedAcft = null;
+        message = false;
+        rainbowMsg = 0;
+        showGameOver = false;
+        score = 0;
+        lost = 0;
+        fire = null;
     }
 
     /**
@@ -336,7 +398,8 @@ load(
                         lostColor = COLOR_DANGER;
                     }
                     if (lost >= 5) {
-                        loop.stop();
+                        // Game Exit
+                        state = 2;
                     }
                 }
                 aircrafts.splice(i, 1);
@@ -348,9 +411,9 @@ load(
         aircrafts.forEach(function(acft, i) {
             aircrafts.forEach(function(acftelse, j) {
                 if (i != j && !acft.landed && !acftelse.landed && acftelse.collidesWith(acft)) {
-                    acft.image = imageAssets['fire'];
-                    acftelse.image = imageAssets['fire'];
-                    loop.stop();
+                    fire = [acft.x, acft.y, acftelse.x, acftelse.y];
+                    // Game Exit
+                    state = 2;
                 }
             });
             acft.render();
@@ -384,45 +447,75 @@ load(
      * Game loop
      */
     let tCount = 0;
-    let msgCounter = 0;
+    let hintCounter = 0;
+    let rainbowCounter = 0;
     let loop = GameLoop({
         update: function() {
-            tCount += 1;
-            if (tCount >= interval) {
-                addAcft();
-                tCount = 0;
-            }
-            if (interval > 240) {
-                interval -= 0.05;
-            }
-            updateAllAcfts();
-            landArea.update();
-            if (message) {
-                msg.update();
-                if (msg.x > canvas.width) {
-                    message = false;
+            if (state == 0) {
+                homepageAcft.update();
+                if (homepageAcft.x > canvas.width + homepageAcft.width) {
+                    homepageAcft.x = 0;
+                }
+            } else if (state == 1) {
+                tCount += 1;
+                if (tCount >= interval) {
+                    addAcft();
+                    tCount = 0;
+                }
+                if (interval > 240) {
+                    interval -= 0.05;
+                }
+                updateAllAcfts();
+                landArea.update();
+                if (message) {
+                    msg.update();
+                    if (msg.x > canvas.width) {
+                        message = false;
+                    }
                 }
             }
         },
         render: function() {
-            drawTracks();
-            drawTower();
-            drawSea();
-            landArea.render();
-            if (message) {
-                msg.render();
-            }
-            renderAllAcfts();
-            if (rainbowMsg == 1) {
-                if (msgCounter < 480) {
-                    showCenterTint("A Rainbow Airplane! Get it landed to score more.");
-                    msgCounter += 1;
-                } else {
-                    msgCounter = 0;
-                    rainbowMsg += 1;
+            if (state == 0) {
+                if (keyPressed('enter')) {
+                    state += 1;
                 }
+                drawHomepage();
+                homepageAcft.render();
+            } else if (state == 2) {
+                if (keyPressed('enter')) {
+                    state = 1;
+                    reset();
+                    addAcft();
+                }
+                drawSea();
+                drawTracks();
+                drawTower();
+                drawFire(fire);
+                showGameOver();
+            } else {
+                drawTracks();
+                drawTower();
+                drawSea();
+                landArea.render();
+                if (message) {
+                    msg.render();
+                }
+                renderAllAcfts();
+                if (hintCounter < 480) {
+                    showCenterHint("HINT: Avoid crash! Avoid signal lost!", 60)
+                    hintCounter += 1;
+                }
+                if (rainbowMsg == 1) {
+                    if (rainbowCounter < 480) {
+                        showCenterHint("A Rainbow Airplane! Get it landed to score more.", 120);
+                        rainbowCounter += 1;
+                    } else {
+                        rainbowMsg += 1;
+                    }
+                }
+                drawScoreAndLost();
             }
-            drawScoreAndLost();
         }
     });
     loop.start();
