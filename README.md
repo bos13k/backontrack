@@ -1,4 +1,4 @@
 # backontrack
 js13kGames entry.
 
-[Try it](https://bos13k.github.io/backontrack)
+[Try it](https://js13kgames.com/entries/back-on-track)
